@@ -95,11 +95,13 @@ void write_footer(void * addr, uint64_t data) {
  */
 bool mm_init(void)
 {
-    if (!mem_sbrk(BLOCK_SIZE)) return false;
+    if (!mem_sbrk(BLOCK_SIZE + BLOCK_SIZE)) return false;
     uint64_t buf = NULL;
     void * addr = mem_heap_lo();
     mem_write(addr, buf, BLOCK_SIZE);
-    first_free = buf;
+    mem_write(addr + BLOCK_SIZE, buf, BLOCK_SIZE);
+    first_free = NULL;
+    last_free = NULL;
     return true;
 }
 
@@ -108,6 +110,7 @@ bool mm_init(void)
  */
 void* malloc(size_t size)
 {
+    printf("MALLOC: TRYING TO ALLOCATE %lx BYTES\n", (uint64_t)size);
     //Check if size requested is invalid
     if (size <= 0) {
         printf("\nError in malloc: given size is less than or equal to 0");
@@ -115,7 +118,7 @@ void* malloc(size_t size)
     }
 
     //align size
-    size_t new_size = align(size);
+    size_t new_size = align(size + BLOCK_SIZE);
 
     //generate free list
     free_list *node = first_free;
@@ -125,9 +128,9 @@ void* malloc(size_t size)
         - create, compress, and write header into heap
     */
     if (node == NULL) {
-        new_size = align(size + BLOCK_SIZE);
         void* addr = mem_sbrk(new_size);
-        header head = {new_size,false};
+        addr -= BLOCK_SIZE;
+        header head = {new_size,false,false};
         
         uint64_t compressed_head = compress_header(head);
         mem_write(addr, compressed_head,BLOCK_SIZE);
@@ -162,11 +165,11 @@ void* malloc(size_t size)
 
                 //Create new header & footer and write it in the heap
                 size_t new_head_size = head.size - new_size - BLOCK_SIZE;
-                header new_head = {new_head_size, true}; 
+                header new_head = {new_head_size, false, true}; 
                 uint64_t compressed_new_head = compress_header(new_head);
-                void * new_head_addr = head_addr + BLOCK_SIZE + new_size + BLOCK_SIZE;
+                void * new_head_addr = head_addr + BLOCK_SIZE + new_size;
                 mem_write(new_head_addr,compressed_new_head, BLOCK_SIZE);
-                write_footer(new)
+                write_footer(new_head_addr + new_head_size, new_head_size);
 
                 //prepare rewrite of header at fitted free spot
                 head.size = new_size;
@@ -209,12 +212,12 @@ void* malloc(size_t size)
     */
     // printf("    CASE 3: ASK FOR MORE SPACE\n");
     void *addr = mem_sbrk(new_size + BLOCK_SIZE);
-    header new_head = {new_size,false};
+    header new_head = {new_size, false, false};
 
     // check if last block in the heap is free then set prev_free in header
     uint64_t last_free_head_compressed = mem_read(last_free - BLOCK_SIZE, BLOCK_SIZE);
     header last_free_head = decompress_header(last_free_head_compressed);
-    if (last_free_head.size + last_free >= mem_heap_hi()) new_head.prev_free = true;
+    if ((uint64_t)(last_free_head.size + last_free) >= (uint64_t)mem_heap_hi()) new_head.prev_free = true;
 
     uint64_t compressed_new_head = compress_header(new_head);
     mem_write(addr, compressed_new_head, BLOCK_SIZE);
@@ -226,10 +229,97 @@ void* malloc(size_t size)
  * free
  */
 void free(void* ptr)
-{
+{   
+    printf("FREE: TRYING TO FREE ADDRESS %lx\n", (uint64_t)(ptr-mem_heap_lo()));
+    //Check if given ptr address is valid
+    if(ptr <= mem_heap_lo() || ptr >= mem_heap_hi() || ptr == NULL) printf("\nERROR IN FREEING PTR AT ADDRESS %lx: ADDRESS INVALID\n", (uint64_t)ptr);
+    
+    //Obtain compressed header
+    uint64_t compressed_head = mem_read(ptr - BLOCK_SIZE, BLOCK_SIZE);
 
+    //Initialize variables
+    header head = decompress_header(compressed_head);
+    header free_head = {head.size, false, true};
+    header next_head = {0, false, false};
+    header prev_head = {0, false, false};
+
+    void *free_head_addr = ptr;
+    void *free_foot_addr = ptr + head.size;
+
+    free_list *next_node = NULL;
+    free_list *prev_node = NULL;
+    free_list *free_node = ptr + BLOCK_SIZE;
+
+    uint64_t free_foot = head.size;
+
+    //If there is no free list
+    if(first_free == NULL) {
+        first_free = ptr + BLOCK_SIZE;
+        last_free = first_free;
+        free_head.free = true;
+        free_head.prev_free = false;
+        free_head.size = head.size;
+        free_foot = head.size;
+        free_foot_addr = ptr + head.size;
+    }
+
+    //There is a free list
+    else {
+        if((uint64_t)(ptr + head.size + BLOCK_SIZE) < (uint64_t)(mem_heap_hi() - BLOCK_SIZE)) {
+            uint64_t next_head_compressed = mem_read((ptr + BLOCK_SIZE + head.size), BLOCK_SIZE);
+            next_head = decompress_header(next_head_compressed);
+
+            //If next head is free
+            if (next_head.free == true) {
+                next_node = (void *)mem_read(ptr + BLOCK_SIZE + head.size + BLOCK_SIZE, BLOCK_SIZE);
+                free_foot_addr = ptr + BLOCK_SIZE + head.size + next_head.size;
+                free_foot += next_head.size + BLOCK_SIZE;
+                next_head_compressed = mem_read((ptr + BLOCK_SIZE + head.size + BLOCK_SIZE + next_head.size), BLOCK_SIZE);
+                next_head = decompress_header(next_head_compressed);
+                next_node = next_node->next;
+            }
+        }
+        if ((uint64_t)ptr > (uint64_t)(mem_heap_lo + BLOCK_SIZE)) {
+
+            //If prev head is free
+            if (head.prev_free == true) {
+                uint64_t footer = mem_read(ptr-BLOCK_SIZE, BLOCK_SIZE);
+                prev_node = (void *)mem_read(ptr-footer,BLOCK_SIZE);
+                uint64_t compressed_prev_head = mem_read(ptr-BLOCK_SIZE-footer,BLOCK_SIZE);
+                prev_head = decompress_header(compressed_prev_head);
+                free_head_addr = ptr - BLOCK_SIZE - footer;
+                free_node = ptr - footer;
+                free_foot += prev_head.size + BLOCK_SIZE;
+            }
+            else {
+                free_head_addr = ptr;
+                free_node = ptr + BLOCK_SIZE;
+            }
+        }
+    }
     
-    
+    uint64_t compressed_free_head = compress_header(free_head);
+    mem_write(free_head_addr,compressed_free_head, BLOCK_SIZE);
+    mem_write((void *)free_node, (uint64_t)free_node, BLOCK_SIZE);
+    write_footer(free_foot_addr, free_foot);
+
+    if (next_node != NULL) {
+        if (next_head.prev_free == false) {
+            next_head.prev_free = true;
+            uint64_t compressed_next_head = compress_header(next_head);
+            mem_write((ptr + BLOCK_SIZE + head.size),compressed_next_head, BLOCK_SIZE);
+        }
+        if(next_node->next == NULL) last_free = free_node;
+        free_node->next = next_node;
+        next_node->prev = free_node;
+        mem_write((void *)next_node, (uint64_t)next_node, BLOCK_SIZE);
+    }
+    if (prev_node != NULL) {
+        free_node->prev = prev_node;
+        prev_node->next = free_node;
+        mem_write((void *)prev_node, (uint64_t)prev_node, BLOCK_SIZE);
+    }
+    mm_checkheap(__LINE__);
 }
 
 /*
@@ -237,8 +327,15 @@ void free(void* ptr)
  */
 void* realloc(void* oldptr, size_t size)
 {
-    /* IMPLEMENT THIS */
-    return NULL;
+    uint64_t compressed = mem_read(oldptr - BLOCK_SIZE, BLOCK_SIZE);
+    header head = decompress_header(compressed);
+    void* newptr = malloc(size);
+    size_t n = size ? size < head.size : head.size;
+    for(size_t i = 0; i < n; i++){
+        memcpy(newptr + i, oldptr + i, 1);
+    }
+
+    return newptr;
 }
 
 /*
@@ -288,7 +385,7 @@ bool mm_checkheap(int lineno)
     printf("--------------------------\n\n");
 
     int count = 1; 
-    while(current_addr < mem_heap_hi()){        
+    while(current_addr < mem_heap_hi() && count < 50){        
 
         uint64_t old_compressed_head = mem_read(current_addr, BLOCK_SIZE);
         header head = decompress_header(old_compressed_head);
@@ -296,12 +393,10 @@ bool mm_checkheap(int lineno)
         printf("Head %d:                                address: %lx\n", count, (uint64_t) (current_addr - mem_heap_lo()));
         printf("Size (dec): %lu (hex): %lx\n", (uint64_t)head.size, (uint64_t)head.size);
         printf("Free: %lu\n", (uint64_t)head.free);
-        printf("------------------------------------------------------------\n");
  
         current_addr = (void *) (current_addr + head.size);
         count++;
     }
-    
 
 //#endif /* DEBUG */
     return true;
