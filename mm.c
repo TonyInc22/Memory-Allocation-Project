@@ -1,12 +1,15 @@
 /*
  * mm.c
  *
- * Name: Anthony Incorvati, Seth Parker, Omar Darras
+ * Name: Anthony Incorvati - ari5086, Seth Parker - sdp218, Omar Darras - opd5033
+ *
  *
  * A heap memory management system for an OS 
  * The main functions are mm init, malloc, free, and realloc 
- * mm init allocates and extends the heap with padding 
- * malloc 
+ * The mm init function allocates and extends the heap with padding 
+ * The malloc function allocates a payload of requested size into the heap with proper alignment and splitting if needed
+ * The free function deallocates space at a requested address in the heap, performing coalescing if needed
+ * The realloc function reallocates space at a requested address in the heap performing either a free or malloc call depending on the size requested
  *
  */
 #include <assert.h>
@@ -242,7 +245,6 @@ void* malloc(size_t size)
 {
 
     size_t asize; 
-    //size_t extendsize; 
     char *bp;
 
     if (size == 0)
@@ -289,8 +291,34 @@ void free(void* ptr)
  */
 void* realloc(void* oldptr, size_t size)
 {
-    /* IMPLEMENT THIS */
-    return NULL;
+    if (size == 0)
+    {
+        free(oldptr);
+        return NULL;
+    }
+    else if (oldptr == NULL)
+    {
+        char *bp = malloc(size);
+        return bp;
+    }
+    else
+    {
+        size_t old_size = GET_SIZE(HDRP(oldptr));
+        size_t new_size = align(size) +DSIZE ;
+
+        if(old_size < new_size)
+        {
+          
+            void *new_ptr = malloc(new_size);
+            memcpy(new_ptr, oldptr, old_size);
+            free(oldptr);
+            return new_ptr; 
+        }
+        else
+        {   
+            return oldptr;
+        }
+    }
 }
 
 /*
