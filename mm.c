@@ -395,23 +395,24 @@ void error() {
  */
 bool mm_checkheap(int lineno) {
 
-    // Conditions to check to raise an error
-    if (/*Write conditions here*/false)  {
-        error();
-        //UNIQUE ERROR MESSAGE HERE
-    }
-    else if (/*Write conditions here*/false)  {
-        error();
-        //UNIQUE ERROR MESSAGE HERE
-    }
-    //...
+    void *addr = heap_start;
 
-    // No errors present, return
-    else return true;
-    
-    // Error was present, print the line and return
-    dbg_printf("\nERROR AT LINE %d\n", lineno);
+    // Conditions to check, if any are true, raise an error
+    while(GET_SIZE(HDRP(addr)) > 0){
+        if (!aligned(addr))  {
+            error();
+            dbg_printf("\nERROR AT LINE %d:", lineno);
+            dbg_printf("Address %lx is not aligned!\n", (uint64_t)addr);
+            return false;
+        }
+        else if (/*Write conditions here*/false)  {
+            error();
+            dbg_printf("\nERROR AT LINE %d:", lineno);
+            dbg_printf("UNIQUE ERROR MESSAGE HERE");
+            return false;
+        }
+        //...
+    }
+
     return true;
-
-    
 }
