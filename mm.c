@@ -364,28 +364,54 @@ static bool aligned(const void* p)
     return align(ip) == ip;
 }
 
+//Function to Go through the heap and output each header pack and address
+void error() {
+
+    dbg_printf("---------------- MM CHECK HEAP ----------------\n");
+    void *addr = heap_start;
+
+    int count = 0;
+
+    // Iterate through each header address of the heap
+    while(GET_SIZE(HDRP(addr)) > 0){
+        
+        // Print headers
+        dbg_printf("---------------------------------------------------\n");
+        dbg_printf("%6d Head Size|       Head Free|    Head Address|\n", count);
+        dbg_printf("%16lx|%16lx|%16lx|\n", GET_SIZE(HDRP(addr)), GET_ALLOC(HDRP(addr)), GET(HDRP(addr)));        
+        
+        // Print footers
+        dbg_printf("       Foot Size|       Foot Free|    Foot Address|\n");
+        dbg_printf("%16lx|%16lx|%16lx|\n", GET_SIZE(FTRP(addr)), GET_ALLOC(FTRP(addr)), GET(FTRP(addr)));  
+
+        count += 1;
+        addr = NEXT_ADDR(addr);
+    }
+    return;
+}
+
 /*
  * mm_checkheap
  */
 bool mm_checkheap(int lineno) {
 
-    void *addr = heap_start;
-
-    dbg_printf("---------------- MM CHECK HEAP %d ----------------\n", lineno);
-    dbg_printf("     Mem Heap Lo|     Mem Heap Hi|\n");
-    dbg_printf("%16lx|%16lx|\n", (uint64_t)(mem_heap_lo() - mem_heap_lo()), (uint64_t)(mem_heap_hi() - mem_heap_lo()));
-
-    int count = 0;
-    while(addr < mem_heap_hi() - DHEAD_SIZE){
-        dbg_printf("---------------------------------------------------\n");
-        dbg_printf("%6d Head Size|       Head Free|    Head Address|\n", count);
-        dbg_printf("%16lx|%16lx|%16lx|\n", GET_SIZE(HDRP(addr)), GET_ALLOC(HDRP(addr)), GET(HDRP(addr)));        
-        // dbg_printf("       Foot Size|       Foot Free|    Foot Address|\n");
-        // dbg_printf("%16lx|%16lx|%16lx|\n", GET_SIZE(FTRP(addr)), GET_ALLOC(FTRP(addr)), GET(FTRP(addr)));  
-
-        count += 1;
-        addr = NEXT_ADDR(addr);
+    // Conditions to check to raise an error
+    if (/*Write conditions here*/false)  {
+        error();
+        //UNIQUE ERROR MESSAGE HERE
     }
+    else if (/*Write conditions here*/false)  {
+        error();
+        //UNIQUE ERROR MESSAGE HERE
+    }
+    //...
+
+    // No errors present, return
+    else return true;
+    
+    // Error was present, print the line and return
+    dbg_printf("\nERROR AT LINE %d\n", lineno);
     return true;
 
+    
 }
