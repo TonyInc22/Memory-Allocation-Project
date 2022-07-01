@@ -90,15 +90,15 @@ uint64_t GET_ALLOC(char *addr)
 }
     
 // return address to the header
-char *HDRP(void *addr) 
+char *HEADER(void *addr) 
 {
     return (char*)(addr) - HEAD_SIZE;
 }
 
 // return address to the footer
-char *FTRP(char *addr) 
+char *FOOTER(char *addr) 
 {
-    return ((char *)(addr) + GET_SIZE(HDRP(addr)) - DHEAD_SIZE); 
+    return ((char *)(addr) + GET_SIZE(HEADER(addr)) - DHEAD_SIZE); 
 } 
 
 
@@ -126,9 +126,9 @@ void *find_fit(size_t size)
 {
     void *addr;
 
-    for (addr = heap_start; GET_SIZE(HDRP(addr)) > 0; addr = NEXT_ADDR(addr)) 
+    for (addr = heap_start; GET_SIZE(HEADER(addr)) > 0; addr = NEXT_ADDR(addr)) 
     {
-        if (!GET_ALLOC(HDRP(addr)) && (size <= GET_SIZE(HDRP(addr))))  
+        if (!GET_ALLOC(HEADER(addr)) && (size <= GET_SIZE(HEADER(addr))))  
         {
             return addr;
         }
@@ -136,34 +136,34 @@ void *find_fit(size_t size)
     return NULL;
 }
 
-// Places a header and footer into the heap at a given address and deals with splitting if necessary
+// Places a header and footer into the heap at a given address and deals with splitting if necessary, specifically used by malloc
 void place(void *addr, size_t new_size)
 {
-    size_t old_size = GET_SIZE(HDRP(addr));
+    size_t old_size = GET_SIZE(HEADER(addr));
 
     //If splitting is necessary
     if ((old_size - new_size) >= (2*DHEAD_SIZE)) 
     {
-        PUT(HDRP(addr), PACK(new_size, 1));
-        PUT(FTRP(addr), PACK(new_size, 1));
+        PUT(HEADER(addr), PACK(new_size, 1));
+        PUT(FOOTER(addr), PACK(new_size, 1));
         addr = NEXT_ADDR(addr);
-        PUT(HDRP(addr), PACK(old_size-new_size, 0));
-        PUT(FTRP(addr), PACK(old_size-new_size, 0));
+        PUT(HEADER(addr), PACK(old_size-new_size, 0));
+        PUT(FOOTER(addr), PACK(old_size-new_size, 0));
     }
     //If splitting is not necessary
     else
     {
-        PUT(HDRP(addr), PACK(old_size, 1));
-        PUT(FTRP(addr), PACK(old_size, 1));
+        PUT(HEADER(addr), PACK(old_size, 1));
+        PUT(FOOTER(addr), PACK(old_size, 1));
     }
 }
 
 //Coalesces free blocks at given address
 void *coalesce(void *addr)
 {
-    size_t prev = GET_ALLOC(FTRP(PREV_ADDR(addr)));
-    size_t next = GET_ALLOC(HDRP(NEXT_ADDR(addr)));
-    size_t size = GET_SIZE(HDRP(addr));
+    size_t prev = GET_ALLOC(FOOTER(PREV_ADDR(addr)));
+    size_t next = GET_ALLOC(HEADER(NEXT_ADDR(addr)));
+    size_t size = GET_SIZE(HEADER(addr));
 
     // CASE 1: No coalescing needed
     if (prev && next) { 
@@ -172,25 +172,25 @@ void *coalesce(void *addr)
 
     // CASE 2: Coalesce the next block
     else if (prev && !next) {
-        size += GET_SIZE(HDRP(NEXT_ADDR(addr)));
-        PUT(HDRP(addr), PACK(size, 0));
-        PUT(FTRP(addr), PACK(size,0));
+        size += GET_SIZE(HEADER(NEXT_ADDR(addr)));
+        PUT(HEADER(addr), PACK(size, 0));
+        PUT(FOOTER(addr), PACK(size,0));
     }
 
     // CASE 3: Coalesce the previous block
     else if (!prev && next) { 
-        size += GET_SIZE(HDRP(PREV_ADDR(addr)));
-        PUT(FTRP(addr), PACK(size, 0));
-        PUT(HDRP(PREV_ADDR(addr)), PACK(size, 0));
+        size += GET_SIZE(HEADER(PREV_ADDR(addr)));
+        PUT(FOOTER(addr), PACK(size, 0));
+        PUT(HEADER(PREV_ADDR(addr)), PACK(size, 0));
         addr = PREV_ADDR(addr);
     }
  
     // CASE 4: Coalesce both blocks
     else { 
-        size += GET_SIZE(HDRP(PREV_ADDR(addr))) +
-        GET_SIZE(FTRP(NEXT_ADDR(addr)));
-        PUT(HDRP(PREV_ADDR(addr)), PACK(size, 0));
-        PUT(FTRP(NEXT_ADDR(addr)), PACK(size, 0));
+        size += GET_SIZE(HEADER(PREV_ADDR(addr))) +
+        GET_SIZE(FOOTER(NEXT_ADDR(addr)));
+        PUT(HEADER(PREV_ADDR(addr)), PACK(size, 0));
+        PUT(FOOTER(NEXT_ADDR(addr)), PACK(size, 0));
         addr = PREV_ADDR(addr);
     }
     return addr;
@@ -206,9 +206,9 @@ void *extend_heap(size_t size)
     return NULL;
 
     // Initialize free block header/footer and the buffer header 
-    PUT(HDRP(addr), PACK(size, 0));  
-    PUT(FTRP(addr), PACK(size, 0)); 
-    PUT(HDRP(NEXT_ADDR(addr)), PACK(0, 1)); 
+    PUT(HEADER(addr), PACK(size, 0));  
+    PUT(FOOTER(addr), PACK(size, 0)); 
+    PUT(HEADER(NEXT_ADDR(addr)), PACK(0, 1)); 
 
     mm_checkheap(__LINE__);
 
@@ -285,11 +285,11 @@ void* malloc(size_t size)
  */
 void free(void* ptr)
 {
-    size_t size = GET_SIZE(HDRP(ptr));
+    size_t size = GET_SIZE(HEADER(ptr));
 
     // Put a header and footer at the given address containing a pack of size and allocation boolean
-    PUT(HDRP(ptr), PACK(size, 0)); 
-    PUT(FTRP(ptr), PACK(size, 0)); 
+    PUT(HEADER(ptr), PACK(size, 0)); 
+    PUT(FOOTER(ptr), PACK(size, 0)); 
 
     // Run new free block address through coalesce function to check if coalecsing is necessary
     coalesce(ptr);
@@ -318,7 +318,7 @@ void* realloc(void* oldptr, size_t size)
 
     else
     {
-        size_t old_size = GET_SIZE(HDRP(oldptr));
+        size_t old_size = GET_SIZE(HEADER(oldptr));
         size_t new_size = align(size) +DHEAD_SIZE ;
 
         // Perform malloc and free operation if given size is less than the existing one at given address
@@ -376,16 +376,16 @@ void print_heap() {
     int count = 1;
 
     // Iterate through each header address of the heap
-    while(GET_SIZE(HDRP(addr)) > 0){
+    while(GET_SIZE(HEADER(addr)) > 0){
         
         // Print headers
         dbg_printf("---------------------------------------------------\n");
         dbg_printf("Head %6d: Size|       Free|    Address|\n", count);
-        dbg_printf("%16lx|%16lx|%16lx|\n", GET_SIZE(HDRP(addr)), GET_ALLOC(HDRP(addr)), GET(HDRP(addr)));        
+        dbg_printf("%16lx|%16lx|%16lx|\n", GET_SIZE(HEADER(addr)), GET_ALLOC(HEADER(addr)), GET(HEADER(addr)));        
         
         // Print footers
         dbg_printf("Foot %6d: Size|       Free|    Address|\n", count);
-        dbg_printf("%16lx|%16lx|%16lx|\n", GET_SIZE(FTRP(addr)), GET_ALLOC(FTRP(addr)), GET(FTRP(addr)));  
+        dbg_printf("%16lx|%16lx|%16lx|\n", GET_SIZE(FOOTER(addr)), GET_ALLOC(FOOTER(addr)), GET(FOOTER(addr)));  
 
         count += 1;
         addr = NEXT_ADDR(addr);
@@ -403,8 +403,8 @@ bool mm_checkheap(int lineno) {
         void *addr = heap_start;
 
         // Heap conditions, if any are true, print heap and corresponding error
-        while(GET_SIZE(HDRP(addr)) > 0){
-            if (!aligned(GET(HDRP(addr))))  {
+        while(GET_SIZE(HEADER(addr)) > 0){
+            if (!aligned(GET(HEADER(addr))))  {
                 print_heap();
                 dbg_printf("\nERROR AT LINE %d: ", lineno);
                 dbg_printf("Address %lx is not aligned!\n", (uint64_t)addr);
