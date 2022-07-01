@@ -272,7 +272,9 @@ void* malloc(size_t size)
 
     // Place header and footer at new address in the heap
     place(addr, asize);
-    return addr;
+
+    if (!mm_checkheap(__LINE__)) return false;
+    else return addr;
     
 
 }
@@ -292,6 +294,7 @@ void free(void* ptr)
     // Run new free block address through coalesce function to check if coalecsing is necessary
     coalesce(ptr);
 
+    mm_checkheap(__LINE__);
     return;
 }
 
@@ -365,28 +368,29 @@ static bool aligned(const void* p)
 }
 
 //Function to Go through the heap and output each header pack and address
-void error() {
-
+void print_heap() {
     dbg_printf("---------------- MM CHECK HEAP ----------------\n");
+
     void *addr = heap_start;
 
-    int count = 0;
+    int count = 1;
 
     // Iterate through each header address of the heap
     while(GET_SIZE(HDRP(addr)) > 0){
         
         // Print headers
         dbg_printf("---------------------------------------------------\n");
-        dbg_printf("%6d Head Size|       Head Free|    Head Address|\n", count);
+        dbg_printf("Head %6d: Size|       Free|    Address|\n", count);
         dbg_printf("%16lx|%16lx|%16lx|\n", GET_SIZE(HDRP(addr)), GET_ALLOC(HDRP(addr)), GET(HDRP(addr)));        
         
         // Print footers
-        dbg_printf("       Foot Size|       Foot Free|    Foot Address|\n");
+        dbg_printf("Foot %6d: Size|       Free|    Address|\n", count);
         dbg_printf("%16lx|%16lx|%16lx|\n", GET_SIZE(FTRP(addr)), GET_ALLOC(FTRP(addr)), GET(FTRP(addr)));  
 
         count += 1;
         addr = NEXT_ADDR(addr);
     }
+
     return;
 }
 
@@ -394,25 +398,27 @@ void error() {
  * mm_checkheap
  */
 bool mm_checkheap(int lineno) {
+    #ifdef DEBUG
 
-    void *addr = heap_start;
+        void *addr = heap_start;
 
-    // Conditions to check, if any are true, raise an error
-    while(GET_SIZE(HDRP(addr)) > 0){
-        if (!aligned(addr))  {
-            error();
-            dbg_printf("\nERROR AT LINE %d:", lineno);
-            dbg_printf("Address %lx is not aligned!\n", (uint64_t)addr);
-            return false;
+        // Heap conditions, if any are true, print heap and corresponding error
+        while(GET_SIZE(HDRP(addr)) > 0){
+            if (!aligned(GET(HDRP(addr))))  {
+                print_heap();
+                dbg_printf("\nERROR AT LINE %d: ", lineno);
+                dbg_printf("Address %lx is not aligned!\n", (uint64_t)addr);
+                return false;
+            }
+            else if (/*WRITE CONDITION HERE*/false)  {
+                print_heap();
+                dbg_printf("\nERROR AT LINE %d: ", lineno);
+                dbg_printf("ERROR MESSAGE HERE!\n");
+                return false;
+            }
+            //...
         }
-        else if (/*Write conditions here*/false)  {
-            error();
-            dbg_printf("\nERROR AT LINE %d:", lineno);
-            dbg_printf("UNIQUE ERROR MESSAGE HERE");
-            return false;
-        }
-        //...
-    }
 
-    return true;
+        return true;
+    #endif
 }
