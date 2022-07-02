@@ -28,7 +28,7 @@
  * uncomment the following line. Be sure not to have debugging enabled
  * in your final submission.
  */
-// #define DEBUG
+ //#define DEBUG
 
 #ifdef DEBUG
 /* When debugging is enabled, the underlying functions get called */
@@ -52,7 +52,24 @@
 #endif /* DRIVER */
 
 #define ALIGNMENT 16
-
+#ifdef DEBUG
+static char *heap_list = 0; //Points to the first block in the heap
+static char *listp = 0; //Points to the first free blk in the heap
+static char *listp1 = 0;
+static char *listp2 = 0;
+static char *listp3 = 0;
+static char *listp4 = 0;
+static char *listp5 = 0;
+static char *listp6 = 0;
+static char *listp7 = 0;
+static char *listp8 = 0;
+static char *listp9 = 0;
+static char *listp10 = 0;
+static char *listp11 = 0;
+static char *listp12 = 0;
+static char *listp13 = 0;
+static char **curr_free = &listp;
+#endif
 // Size of chunk, head/foot, and double head/foot
 size_t HEAD_SIZE = 8;
 size_t DHEAD_SIZE = 16;  
@@ -221,7 +238,23 @@ void *extend_heap(size_t size)
  */
 bool mm_init(void)
 {
-    
+    #ifdef DEBUG
+    heap_list += (2*HEAD_SIZE);
+    listp = heap_list;
+    listp1 = heap_list;
+    listp2 = heap_list;
+    listp3 = heap_list;
+    listp4 = heap_list;
+    listp5 = heap_list;
+    listp6 = heap_list;
+    listp7 = heap_list;
+    listp8 = heap_list;
+    listp9 = heap_list;
+    listp10 = heap_list;
+    listp11 = heap_list;
+    listp12 = heap_list;
+    listp13 = heap_list;
+    #endif
     /* Create the initial empty heap */
     if ((heap_start = mem_sbrk(4*HEAD_SIZE)) == (void *)-1)
     {
@@ -403,22 +436,113 @@ bool mm_checkheap(int lineno) {
         void *addr = heap_start;
 
         // Heap conditions, if any are true, print heap and corresponding error
-        while(GET_SIZE(HEADER(addr)) > 0){
-            if (!aligned(GET(HEADER(addr))))  {
+        while(GET_SIZE(HEADER(addr)) > 0/* && GET_SIZE(HEADER(addr)) < 10*/){
+            if (!aligned(addr))  {
                 print_heap();
                 dbg_printf("\nERROR AT LINE %d: ", lineno);
                 dbg_printf("Address %lx is not aligned!\n", (uint64_t)addr);
                 return false;
             }
-            else if (/*WRITE CONDITION HERE*/false)  {
+            /*else if (WRITE CONDITION HEREfalse)  {
                 print_heap();
                 dbg_printf("\nERROR AT LINE %d: ", lineno);
                 dbg_printf("ERROR MESSAGE HERE!\n");
                 return false;
+            }*/
+
+            //else if
+        if(lineno >= 0 && lineno <15){
+            char **curr; 
+            dbg_printf("CURR FREELIST: %p\n", curr_free); 
+            if(lineno == 0)
+            {
+                curr = &listp;
+                dbg_printf("FREE 0: %p\n", &listp); 
             }
+            else if(lineno == 1)
+            {
+                curr = &listp1;
+                dbg_printf("FREE 1: %p\n", &listp1); 
+            }	
+            else if(lineno == 2)
+            {
+                curr = &listp2;
+                dbg_printf("FREE 2: %p\n", &listp2); 
+            }
+            else if(lineno == 3)
+            {
+                curr = &listp3;
+                dbg_printf("FREE 3: %p\n", &listp3); 
+            }
+            else if(lineno == 4)
+            {	
+                curr = &listp4;
+                dbg_printf("FREE 4: %p\n", &listp4); 
+            }
+            else if(lineno == 5)
+            {
+                curr = &listp5;
+                dbg_printf("FREE 5: %p\n", &listp5); 
+            }
+            else if(lineno == 6)
+            {
+                curr = &listp6;
+                dbg_printf("FREE 6: %p\n", &listp6); 
+            }
+            else if(lineno == 7)
+            {
+                curr = &listp7;
+                dbg_printf("FREE 7: %p\n", &listp7); 
+            }
+            else if(lineno == 8)
+            {
+                curr = &listp8;
+                dbg_printf("FREE 8: %p\n", &listp8); 
+            }
+            else if(lineno == 9)
+            {
+                curr = &listp9;
+                dbg_printf("FREE 9: %p\n", &listp9); 
+            }
+            else if(lineno == 10)
+            {
+                curr = &listp10;
+                dbg_printf("FREE 10: %p\n", &listp10); 
+            }
+            else if(lineno == 11)
+            {
+                curr = &listp11;
+                dbg_printf("FREE 11: %p\n", &listp11); 
+            }
+            else if(lineno == 12)
+            {
+                curr = &listp12;
+                dbg_printf("FREE 12: %p\n", &listp12); 
+            }
+            else if(lineno == 13)
+            {
+                curr = &listp13;
+                dbg_printf("FREE 13: %p\n", &listp13); 
+            }
+            else
+            {
+                dbg_printf("AN ERROR HAS OCCURED WITH THE FREELIST\n");
+                return false; 
+            }
+            dbg_printf("\n"); 
+            
+            if(curr == &heap_list)
+            {
+                dbg_printf("heap_list = %p\n", heap_list); 
+                dbg_printf("curr = %p\n\n", *curr); 
+                dbg_printf("FREE EMPTY!\n\n");
+                return false; 
+        }
             //...
         }
-
-        return true;
+        addr = NEXT_ADDR(addr);
+    }
+    print_heap();    
     #endif
+    return true;
 }
