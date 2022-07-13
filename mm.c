@@ -160,8 +160,8 @@ void *find_fit(size_t size)
     void *addr = free_list;
     if (addr == mem_heap_lo) return NULL;
 
-    //do if (!GET_ALLOC(HEADER(addr)) && (size <= GET_SIZE(HEADER(addr)))) return addr;
-    //while ((addr = (void *)GET(NEXT_FREE(addr))) != mem_heap_lo);
+    do if (!GET_ALLOC(HEADER(addr)) && (size <= GET_SIZE(HEADER(addr)))) return addr;
+    while ((addr = (void *)GET(NEXT_FREE(addr))) != mem_heap_lo);
 
     return NULL;
 }
@@ -183,11 +183,11 @@ void place(void *addr, size_t new_size)
 
         // Create new free block
             // Update the prev free list's address to the current free block
-            UPDATE_FREELIST(free_list, NULL, addr);
- 
+            if (PREV_ADDR(addr) != NEXT_ADDR(HEADER(heap_start + HEAD_SIZE))) UPDATE_FREELIST(free_list, NULL, addr);
+            
             PUT(NEXT_FREE(addr), (uint64_t)mem_heap_lo);
             PUT(PREV_FREE(addr), (uint64_t)free_list);
-
+            
             free_list = addr;
     }
     //If splitting is not necessary
@@ -199,12 +199,12 @@ void place(void *addr, size_t new_size)
 }
 
 //Coalesces free blocks at given address
-void *coalesce(void *addr)
+void *coalesce(void *addr, bool extend_heap_call)
 {
-    
     size_t prev = GET_ALLOC(FOOTER(PREV_ADDR(addr)));
     size_t next = GET_ALLOC(HEADER(NEXT_ADDR(addr)));
     size_t size = GET_SIZE(HEADER(addr));
+
     
     // CASE 1: No coalescing needed
     if (prev && next) {
@@ -213,6 +213,7 @@ void *coalesce(void *addr)
 
     // CASE 2: Coalesce the next block
     else if (prev && !next) {
+        printf("test2\n");
         size += GET_SIZE(HEADER(NEXT_ADDR(addr)));
         PUT(HEADER(addr), PACK(size, 0));
         PUT(FOOTER(addr), PACK(size,0));
@@ -221,13 +222,13 @@ void *coalesce(void *addr)
     }
 
     // CASE 3: Coalesce the previous block
-    else if (!prev && next) { 
+    else if (!prev && next) {
         size += GET_SIZE(HEADER(PREV_ADDR(addr)));
         PUT(FOOTER(addr), PACK(size, 0));
         PUT(HEADER(PREV_ADDR(addr)), PACK(size, 0));
         addr = PREV_ADDR(addr);
 
-        if (addr != NEXT_ADDR(HEADER(heap_start + HEAD_SIZE))) UPDATE_FREELIST(NEXT_FREE((void *)GET(PREV_FREE(PREV_ADDR(addr)))), NULL, addr);
+        if (!extend_heap_call) UPDATE_FREELIST(NEXT_FREE((void *)GET(PREV_FREE(PREV_ADDR(addr)))), NULL, addr);
     }
  
     // CASE 4: Coalesce both blocks
@@ -260,8 +261,8 @@ void *extend_heap(size_t size)
 
     mm_checkheap(__LINE__);
 
-    // Coalesce if the previous block was free 
-    return coalesce(addr);
+    // Coalesce previous buffer into extended heap
+    return coalesce(addr, true);
  }
 
 /*
@@ -327,16 +328,13 @@ void* malloc(size_t size)
         place(addr,asize);
         return addr;
     }
-
     // Request more room in the heap and check to make sure it's granted
     if ((addr = extend_heap(asize)) == NULL)
-    {
+    {  
         return NULL;
     }
-
     // Place header and footer at new address in the heap
     place(addr, asize);
-
     if (!mm_checkheap(__LINE__)) return false;
     else return addr;
     
@@ -349,6 +347,7 @@ void* malloc(size_t size)
  */
 void free(void* ptr)
 {
+    printf("FREE CALL AT ADDRESS %lx\n", (uint64_t)ptr-(uint64_t)mem_heap_lo);
     size_t size = GET_SIZE(HEADER(ptr));
 
     // Put a header and footer at the given address containing a pack of size and allocation boolean
@@ -356,10 +355,9 @@ void free(void* ptr)
     PUT(FOOTER(ptr), PACK(size, 0)); 
 
     // Run new free block address through coalesce function to check if coalecsing is necessary
-    ptr = coalesce(ptr);
-
+    ptr = coalesce(ptr, false);
+    
     PUT(NEXT_FREE(ptr), (uint64_t)mem_heap_lo);
-    // printf("THIS SHOULD BE 0: %ld\n", GET(NEXT_FREE(ptr)));
     PUT(PREV_FREE(ptr), (uint64_t)free_list);
 
     free_list = ptr;
