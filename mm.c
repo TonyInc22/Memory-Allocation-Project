@@ -28,7 +28,7 @@
  * uncomment the following line. Be sure not to have debugging enabled
  * in your final submission.
  */
-// #define DEBUG
+ //#define DEBUG
 
 #ifdef DEBUG
 /* When debugging is enabled, the underlying functions get called */
@@ -52,13 +52,32 @@
 #endif /* DRIVER */
 
 #define ALIGNMENT 16
-
+#ifdef DEBUG
+static char *heap_list = 0; //Points to the first block in the heap
+static char *listp = 0; //Points to the first free blk in the heap
+static char *listp1 = 0;
+static char *listp2 = 0;
+static char *listp3 = 0;
+static char *listp4 = 0;
+static char *listp5 = 0;
+static char *listp6 = 0;
+static char *listp7 = 0;
+static char *listp8 = 0;
+static char *listp9 = 0;
+static char *listp10 = 0;
+static char *listp11 = 0;
+static char *listp12 = 0;
+static char *listp13 = 0;
+static char **curr_free = &listp;
+#endif
 // Size of chunk, head/foot, and double head/foot
 size_t HEAD_SIZE = 8;
 size_t DHEAD_SIZE = 16;  
 
 // Initialization of the starting address for the heap
-static char *heap_start = 0;
+static char *heap_start;
+
+static char *free_list = (char *)mem_heap_lo;
 
 // Uses bitwise operators to return a package of size and allocation ready to be placed into the heap
 uint64_t PACK(int size,  int alloc)
@@ -83,12 +102,13 @@ uint64_t GET_SIZE(char *addr)
 {
     return (GET(addr) & ~(DHEAD_SIZE - 1));
 }
+
 // return the allocated bit from header or footer at address 
 uint64_t GET_ALLOC(char *addr) 
 {
     return (GET(addr) & 0x1);
 }
-    
+
 // return address to the header
 char *HEADER(void *addr) 
 {
@@ -99,8 +119,15 @@ char *HEADER(void *addr)
 char *FOOTER(char *addr) 
 {
     return ((char *)(addr) + GET_SIZE(HEADER(addr)) - DHEAD_SIZE); 
-} 
+}
 
+char *NEXT_FREE(char *addr) {
+    return ((char *)(addr));
+}
+
+char *PREV_FREE(char *addr) {
+    return ((char *)(addr) + HEAD_SIZE);
+}
 
 // return the address of the next block
 char *NEXT_ADDR(void *addr) 
@@ -115,6 +142,12 @@ char *PREV_ADDR(void *addr)
     return ((char *)(addr) - GET_SIZE(((char *)(addr) - DHEAD_SIZE)));
 } 
 
+void UPDATE_FREELIST(void *addr, void *prev, void *next) 
+{
+    if (prev != NULL) PUT(PREV_FREE((char *)addr), (uint64_t)prev);
+    if (next != NULL) PUT(NEXT_FREE((char *)addr), (uint64_t)next);
+}
+
 /* rounds up to the nearest multiple of ALIGNMENT */
 static size_t align(size_t x)
 {
@@ -124,15 +157,12 @@ static size_t align(size_t x)
 // First fit algorithm to find the first available space in the heap for the given size
 void *find_fit(size_t size)
 {
-    void *addr;
+    void *addr = free_list;
+    if (addr == mem_heap_lo) return NULL;
 
-    for (addr = heap_start; GET_SIZE(HEADER(addr)) > 0; addr = NEXT_ADDR(addr)) 
-    {
-        if (!GET_ALLOC(HEADER(addr)) && (size <= GET_SIZE(HEADER(addr))))  
-        {
-            return addr;
-        }
-    }
+    //do if (!GET_ALLOC(HEADER(addr)) && (size <= GET_SIZE(HEADER(addr)))) return addr;
+    //while ((addr = (void *)GET(NEXT_FREE(addr))) != mem_heap_lo);
+
     return NULL;
 }
 
@@ -146,9 +176,19 @@ void place(void *addr, size_t new_size)
     {
         PUT(HEADER(addr), PACK(new_size, 1));
         PUT(FOOTER(addr), PACK(new_size, 1));
+
         addr = NEXT_ADDR(addr);
         PUT(HEADER(addr), PACK(old_size-new_size, 0));
         PUT(FOOTER(addr), PACK(old_size-new_size, 0));
+
+        // Create new free block
+            // Update the prev free list's address to the current free block
+            UPDATE_FREELIST(free_list, NULL, addr);
+ 
+            PUT(NEXT_FREE(addr), (uint64_t)mem_heap_lo);
+            PUT(PREV_FREE(addr), (uint64_t)free_list);
+
+            free_list = addr;
     }
     //If splitting is not necessary
     else
@@ -161,12 +201,13 @@ void place(void *addr, size_t new_size)
 //Coalesces free blocks at given address
 void *coalesce(void *addr)
 {
+    
     size_t prev = GET_ALLOC(FOOTER(PREV_ADDR(addr)));
     size_t next = GET_ALLOC(HEADER(NEXT_ADDR(addr)));
     size_t size = GET_SIZE(HEADER(addr));
-
+    
     // CASE 1: No coalescing needed
-    if (prev && next) { 
+    if (prev && next) {
         return addr;
     }
 
@@ -175,6 +216,8 @@ void *coalesce(void *addr)
         size += GET_SIZE(HEADER(NEXT_ADDR(addr)));
         PUT(HEADER(addr), PACK(size, 0));
         PUT(FOOTER(addr), PACK(size,0));
+
+        UPDATE_FREELIST(PREV_FREE((void *)GET(NEXT_FREE(NEXT_ADDR(addr)))), addr, NULL);
     }
 
     // CASE 3: Coalesce the previous block
@@ -183,6 +226,8 @@ void *coalesce(void *addr)
         PUT(FOOTER(addr), PACK(size, 0));
         PUT(HEADER(PREV_ADDR(addr)), PACK(size, 0));
         addr = PREV_ADDR(addr);
+
+        if (addr != NEXT_ADDR(HEADER(heap_start + HEAD_SIZE))) UPDATE_FREELIST(NEXT_FREE((void *)GET(PREV_FREE(PREV_ADDR(addr)))), NULL, addr);
     }
  
     // CASE 4: Coalesce both blocks
@@ -192,7 +237,11 @@ void *coalesce(void *addr)
         PUT(HEADER(PREV_ADDR(addr)), PACK(size, 0));
         PUT(FOOTER(NEXT_ADDR(addr)), PACK(size, 0));
         addr = PREV_ADDR(addr);
+
+        UPDATE_FREELIST(PREV_FREE((void *)GET(NEXT_FREE(NEXT_ADDR(addr)))), addr, NULL);
+        UPDATE_FREELIST(NEXT_FREE((void *)GET(PREV_FREE(PREV_ADDR(addr)))), NULL, addr);
     }
+
     return addr;
 }
 
@@ -202,8 +251,7 @@ void *extend_heap(size_t size)
     char *addr;
 
     // Allocate an even number of words to maintain alignment 
-    if ((long)(addr = mem_sbrk(size)) == -1)
-    return NULL;
+    if ((long)(addr = mem_sbrk(size)) == -1) return NULL;
 
     // Initialize free block header/footer and the buffer header 
     PUT(HEADER(addr), PACK(size, 0));  
@@ -221,7 +269,23 @@ void *extend_heap(size_t size)
  */
 bool mm_init(void)
 {
-    
+    #ifdef DEBUG
+    heap_list += (2*HEAD_SIZE);
+    listp = heap_list;
+    listp1 = heap_list;
+    listp2 = heap_list;
+    listp3 = heap_list;
+    listp4 = heap_list;
+    listp5 = heap_list;
+    listp6 = heap_list;
+    listp7 = heap_list;
+    listp8 = heap_list;
+    listp9 = heap_list;
+    listp10 = heap_list;
+    listp11 = heap_list;
+    listp12 = heap_list;
+    listp13 = heap_list;
+    #endif
     /* Create the initial empty heap */
     if ((heap_start = mem_sbrk(4*HEAD_SIZE)) == (void *)-1)
     {
@@ -248,7 +312,7 @@ bool mm_init(void)
  */
 void* malloc(size_t size)
 {
-
+    printf("MALLOC CALL OF SIZE %lx\n", (uint64_t)size);
     size_t asize; 
     char *addr;
 
@@ -263,7 +327,7 @@ void* malloc(size_t size)
         place(addr,asize);
         return addr;
     }
-    
+
     // Request more room in the heap and check to make sure it's granted
     if ((addr = extend_heap(asize)) == NULL)
     {
@@ -292,7 +356,13 @@ void free(void* ptr)
     PUT(FOOTER(ptr), PACK(size, 0)); 
 
     // Run new free block address through coalesce function to check if coalecsing is necessary
-    coalesce(ptr);
+    ptr = coalesce(ptr);
+
+    PUT(NEXT_FREE(ptr), (uint64_t)mem_heap_lo);
+    // printf("THIS SHOULD BE 0: %ld\n", GET(NEXT_FREE(ptr)));
+    PUT(PREV_FREE(ptr), (uint64_t)free_list);
+
+    free_list = ptr;
 
     mm_checkheap(__LINE__);
     return;
@@ -381,11 +451,11 @@ void print_heap() {
         // Print headers
         dbg_printf("---------------------------------------------------\n");
         dbg_printf("Head %6d: Size|       Free|    Address|\n", count);
-        dbg_printf("%16lx|%16lx|%16lx|\n", GET_SIZE(HEADER(addr)), GET_ALLOC(HEADER(addr)), GET(HEADER(addr)));        
+        dbg_printf("%16lx|%16lx|%16lx|\n", GET_SIZE(HEADER(addr)), GET_ALLOC(HEADER(addr)), GET(HEADER(addr)) - (uint64_t)mem_heap_lo());        
         
         // Print footers
         dbg_printf("Foot %6d: Size|       Free|    Address|\n", count);
-        dbg_printf("%16lx|%16lx|%16lx|\n", GET_SIZE(FOOTER(addr)), GET_ALLOC(FOOTER(addr)), GET(FOOTER(addr)));  
+        dbg_printf("%16lx|%16lx|%16lx|\n", GET_SIZE(FOOTER(addr)), GET_ALLOC(FOOTER(addr)), GET(FOOTER(addr)) - (uint64_t)mem_heap_lo());  
 
         count += 1;
         addr = NEXT_ADDR(addr);
@@ -403,22 +473,113 @@ bool mm_checkheap(int lineno) {
         void *addr = heap_start;
 
         // Heap conditions, if any are true, print heap and corresponding error
-        while(GET_SIZE(HEADER(addr)) > 0){
-            if (!aligned(GET(HEADER(addr))))  {
+        while(GET_SIZE(HEADER(addr)) > 0/* && GET_SIZE(HEADER(addr)) < 10*/){
+            if (!aligned(addr))  {
                 print_heap();
                 dbg_printf("\nERROR AT LINE %d: ", lineno);
                 dbg_printf("Address %lx is not aligned!\n", (uint64_t)addr);
                 return false;
             }
-            else if (/*WRITE CONDITION HERE*/false)  {
+            /*else if (WRITE CONDITION HEREfalse)  {
                 print_heap();
                 dbg_printf("\nERROR AT LINE %d: ", lineno);
                 dbg_printf("ERROR MESSAGE HERE!\n");
                 return false;
+            }*/
+
+            //else if
+        if(lineno >= 0 && lineno <15){
+            char **curr; 
+            dbg_printf("CURR FREELIST: %p\n", curr_free); 
+            if(lineno == 0)
+            {
+                curr = &listp;
+                dbg_printf("FREE 0: %p\n", &listp); 
             }
+            else if(lineno == 1)
+            {
+                curr = &listp1;
+                dbg_printf("FREE 1: %p\n", &listp1); 
+            }	
+            else if(lineno == 2)
+            {
+                curr = &listp2;
+                dbg_printf("FREE 2: %p\n", &listp2); 
+            }
+            else if(lineno == 3)
+            {
+                curr = &listp3;
+                dbg_printf("FREE 3: %p\n", &listp3); 
+            }
+            else if(lineno == 4)
+            {	
+                curr = &listp4;
+                dbg_printf("FREE 4: %p\n", &listp4); 
+            }
+            else if(lineno == 5)
+            {
+                curr = &listp5;
+                dbg_printf("FREE 5: %p\n", &listp5); 
+            }
+            else if(lineno == 6)
+            {
+                curr = &listp6;
+                dbg_printf("FREE 6: %p\n", &listp6); 
+            }
+            else if(lineno == 7)
+            {
+                curr = &listp7;
+                dbg_printf("FREE 7: %p\n", &listp7); 
+            }
+            else if(lineno == 8)
+            {
+                curr = &listp8;
+                dbg_printf("FREE 8: %p\n", &listp8); 
+            }
+            else if(lineno == 9)
+            {
+                curr = &listp9;
+                dbg_printf("FREE 9: %p\n", &listp9); 
+            }
+            else if(lineno == 10)
+            {
+                curr = &listp10;
+                dbg_printf("FREE 10: %p\n", &listp10); 
+            }
+            else if(lineno == 11)
+            {
+                curr = &listp11;
+                dbg_printf("FREE 11: %p\n", &listp11); 
+            }
+            else if(lineno == 12)
+            {
+                curr = &listp12;
+                dbg_printf("FREE 12: %p\n", &listp12); 
+            }
+            else if(lineno == 13)
+            {
+                curr = &listp13;
+                dbg_printf("FREE 13: %p\n", &listp13); 
+            }
+            else
+            {
+                dbg_printf("AN ERROR HAS OCCURED WITH THE FREELIST\n");
+                return false; 
+            }
+            dbg_printf("\n"); 
+            
+            if(curr == &heap_list)
+            {
+                dbg_printf("heap_list = %p\n", heap_list); 
+                dbg_printf("curr = %p\n\n", *curr); 
+                dbg_printf("FREE EMPTY!\n\n");
+                return false; 
+        }
             //...
         }
-
-        return true;
+        addr = NEXT_ADDR(addr);
+    }
+    print_heap();    
     #endif
+    return true;
 }
