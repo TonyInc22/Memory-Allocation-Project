@@ -62,15 +62,17 @@ static char *heap_start;
 static char *free_list_lo, *free_list_hi;
 
 // Uses bitwise operators to return a package of size and allocation ready to be placed into the heap
-uint64_t PACK(int size,  int alloc)
+uint64_t PACK(size_t size,  size_t alloc)
 {
+    // if ((uint64_t)size > 0xFFFFFFFF) printf("\n\nTEST\n\n");
     return ((size) | (alloc));
 }
 
 //Writes val at given address
-uint64_t PUT(char *addr, uint64_t val) 
+void PUT(char *addr, uint64_t val) 
 {
-    return (*(uint64_t *)(addr) = (uint64_t)(val));
+    *(uint64_t *)(addr) = (uint64_t)(val);
+    return;
 }
 
 void PUT_FREELIST(char *addr, char *prev, char *next)
@@ -86,13 +88,13 @@ uint64_t GET(char *addr)
 } 
 
 //  return the size from header or footer at address 
-uint64_t GET_SIZE(char *addr) 
+size_t GET_SIZE(char *addr) 
 {
     return (GET(addr) & ~(DHEAD_SIZE - 1));
 }
 
 // return the allocated bit from header or footer at address 
-uint64_t GET_ALLOC(char *addr) 
+size_t GET_ALLOC(char *addr) 
 {
     return (GET(addr) & 0x1);
 }
@@ -461,9 +463,10 @@ static bool aligned(const void* p)
     return align(ip) == ip;
 }
 
-//Function to Go through the heap and output each header pack and address
+// Goes through the heap and outputs each header pack and address
 void print_heap() {
     dbg_printf("\n\n     --- MM CHECK HEAP: HEADERS AND FOOTERS ---\n");
+    dbg_printf("Low: %lx%8cHigh: %lx\n", (uint64_t)mem_heap_lo() - (uint64_t)mem_heap_lo(), ' ', (uint64_t)mem_heap_hi() - (uint64_t)mem_heap_lo());
 
     char *addr = heap_start;
 
@@ -472,14 +475,13 @@ void print_heap() {
     // Iterate through each header address of the heap
     while(GET_SIZE(HEADER(addr)) > 0){
         
-        // Print headers
         dbg_printf("---------------------------------------------------\n");
-        dbg_printf("%d%11cSize|       Allocated|         Address|\n", count, ' ');
-        dbg_printf("Head%12lx|%16lx|%16lx|\n", GET_SIZE(HEADER(addr)), GET_ALLOC(HEADER(addr)), (uint64_t)addr - (uint64_t)mem_heap_lo());        
+        dbg_printf("%d%11cSize|       Allocated|         Address|\n", count, ' ');        
         
-        // Print footers
+        // Print header and footer
+        dbg_printf("Head%12lx|%16lx|%16lx|\n", GET_SIZE(HEADER(addr)), GET_ALLOC(HEADER(addr)), (uint64_t)addr - (uint64_t)mem_heap_lo());
         dbg_printf("Foot%12lx|%16lx|%16lx|\n", GET_SIZE(FOOTER(addr)), GET_ALLOC(FOOTER(addr)), (uint64_t)addr - (uint64_t)mem_heap_lo());  
-
+  
         count += 1;
         addr = NEXT_ADDR(addr);
     }
@@ -488,6 +490,7 @@ void print_heap() {
     return;
 }
 
+// Goes through the free list and outputs each entry
 void print_freelist() {
     dbg_printf("\n\n         --- MM CHECK HEAP: FREE LIST ---\n");
     dbg_printf("Low: %lx%8cHigh: %lx\n", (uint64_t)free_list_lo - (uint64_t)mem_heap_lo(), ' ', (uint64_t)free_list_hi - (uint64_t)mem_heap_lo());
@@ -498,9 +501,9 @@ void print_freelist() {
 
     // Iterate through each free list entry of the heap
     do {
-        
-        // Print current address, previous free address, and next free address
         dbg_printf("---------------------------------------------------\n");
+
+        // Print current address, previous free address, and next free address
         dbg_printf("%d%11cPrev|            Next|         Address|\n", count, ' ');
         dbg_printf("%16lx|%16lx|%16lx|\n", (uint64_t)GET_PREV_FREE(addr) - (uint64_t)mem_heap_lo(), (uint64_t)GET_NEXT_FREE(addr) - (uint64_t)mem_heap_lo(), (uint64_t)addr - (uint64_t)mem_heap_lo());        
 
@@ -611,6 +614,9 @@ bool mm_checkheap(int lineno) {
         }
 
     #endif
+
+    print_heap();
+    print_freelist();
 
     return true;
 }
