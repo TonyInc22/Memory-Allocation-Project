@@ -28,7 +28,7 @@
  * uncomment the following line. Be sure not to have debugging enabled
  * in your final submission.
  */
- #define DEBUG
+//  #define DEBUG
 
 #ifdef DEBUG
 /* When debugging is enabled, the underlying functions get called */
@@ -179,6 +179,8 @@ void REMOVE_FREELIST(char *addr)
     else {
         PUT_FREELIST(GET_PREV_FREE(addr), GET_PREV_FREE(GET_PREV_FREE(addr)), GET_NEXT_FREE(addr));
         PUT_FREELIST(GET_NEXT_FREE(addr), GET_PREV_FREE(addr), GET_NEXT_FREE(GET_NEXT_FREE(addr)));
+        if (addr == free_list_hi) free_list_hi = GET_PREV_FREE(addr);
+        if (addr == free_list_lo) free_list_lo = GET_NEXT_FREE(addr); 
     }
     return;
 }
@@ -335,7 +337,7 @@ void* malloc(size_t size)
 
     asize = align(size)+DHEAD_SIZE;
 
-    dbg_printf("MALLOC CALL OF SIZE %lx ALIGNED TO %lx", (uint64_t)size, (uint64_t)asize);
+    dbg_printf("\nMALLOC CALL OF SIZE %lx ALIGNED TO %lx", (uint64_t)size, (uint64_t)asize);
 
     // If there is a fit in the heap, place a new header and footer there
     if ((addr = find_fit(asize)) != NULL)
@@ -353,6 +355,7 @@ void* malloc(size_t size)
     {  
         return NULL;
     }
+
     // Place header and footer at new address in the heap
     place(addr, asize);
 
@@ -372,7 +375,7 @@ void* malloc(size_t size)
  */
 void free(void* ptr)
 {
-    printf("FREE CALL AT ADDRESS %lx\n", (uint64_t)ptr - (uint64_t)mem_heap_lo());
+    dbg_printf("\nFREE CALL AT ADDRESS %lx\n", (uint64_t)ptr - (uint64_t)mem_heap_lo());
     size_t size = GET_SIZE(HEADER(ptr));
 
     // Put a header and footer at the given address containing a pack of size and allocation boolean
@@ -487,6 +490,7 @@ void print_heap() {
 
 void print_freelist() {
     dbg_printf("\n\n         --- MM CHECK HEAP: FREE LIST ---\n");
+    dbg_printf("Low: %lx%8cHigh: %lx\n", (uint64_t)free_list_lo - (uint64_t)mem_heap_lo(), ' ', (uint64_t)free_list_hi - (uint64_t)mem_heap_lo());
 
     char *addr = free_list_lo;
 
@@ -592,18 +596,21 @@ bool mm_checkheap(int lineno) {
             count_2 += 1;
         } while((addr = GET_NEXT_FREE(addr)) != free_list_lo);
 
-        if (count != count_2)  {
-                dbg_printf("\nERROR AT LINE %d: ", lineno);
-                dbg_printf("Free list has %d entries while there are %d free blocks\n", count_2, count);
-                print_heap();
-                print_freelist();
-                return false;
+        if (GET_PREV_FREE(addr) != free_list_hi)  {
+            dbg_printf("\nERROR AT LINE %d: ", lineno);
+            dbg_printf("The free list's local pointer for the free_list_hi variable points to an incorrect value\n");
+            print_heap();
+            print_freelist();
+            return false;
+        } else if (count != count_2)  {
+            dbg_printf("\nERROR AT LINE %d: ", lineno);
+            dbg_printf("Free list has %d entries while there are %d free blocks\n", count_2, count);
+            print_heap();
+            print_freelist();
+            return false;
         }
 
     #endif
-
-    print_heap();
-    print_freelist();
 
     return true;
 }
