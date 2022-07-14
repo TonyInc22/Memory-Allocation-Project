@@ -59,80 +59,57 @@ size_t DHEAD_SIZE = 16;
 // Initialization of the starting address for the heap
 static char *heap_start;
 
+// Initialization of the starting and ending address of the free list
 static char *free_list_lo, *free_list_hi;
+
+// Returns package at given address in the heap
+uint64_t GET(char *addr) {return (*(uint64_t *)(addr));}
+
+// Return size of block at given address in the heap 
+size_t GET_SIZE(char *addr) {return (GET(addr) & ~(DHEAD_SIZE - 1));}
+
+// Return allocation status of block at given address in the heap 
+size_t GET_ALLOC(char *addr) {return (GET(addr) & 0x1);}
+
+// Return address to the previous free list pointer stored at given address in heap
+char *GET_PREV_FREE(char *addr) {return (char *)(GET(addr));}
+
+// Return address to the next free list pointer stored at given address in heap
+char *GET_NEXT_FREE(char *addr) {return (char *)(GET(addr + HEAD_SIZE));}
+
+// return address to the header from given address in heap
+char *HEADER(char *addr) {return (char*)(addr) - HEAD_SIZE;}
+
+// return address to the footer from given address in heap
+char *FOOTER(char *addr) {return ((char *)(addr) + GET_SIZE(HEADER(addr)) - DHEAD_SIZE); }
+
+// return the address of the next block from given address in heap
+char *NEXT_ADDR(char *addr) {return ((char *)(addr) + GET_SIZE(((char *)(addr) - HEAD_SIZE)));}
+
+// return the address of the previous block from given address in heap
+char *PREV_ADDR(char *addr) {return ((char *)(addr) - GET_SIZE(((char *)(addr) - DHEAD_SIZE)));} 
 
 // Uses bitwise operators to return a package of size and allocation ready to be placed into the heap
 uint64_t PACK(size_t size,  size_t alloc)
 {
-    // if ((uint64_t)size > 0xFFFFFFFF) printf("\n\nTEST\n\n");
     return ((size) | (alloc));
 }
 
-//Writes val at given address
-void PUT(char *addr, uint64_t val) 
+// Writes pack at given address in heap
+void PUT(char *addr, uint64_t pack) 
 {
-    *(uint64_t *)(addr) = (uint64_t)(val);
+    *(uint64_t *)(addr) = (uint64_t)(pack);
     return;
 }
 
+// Writes pointers prev and next at given address in heap
 void PUT_FREELIST(char *addr, char *prev, char *next)
 {
     PUT(addr, (uint64_t)prev);
     PUT(addr + HEAD_SIZE, (uint64_t)next);
 }
 
-//Reads at given address and returns package
-uint64_t GET(char *addr)
-{
-    return (*(uint64_t *)(addr));
-} 
-
-//  return the size from header or footer at address 
-size_t GET_SIZE(char *addr) 
-{
-    return (GET(addr) & ~(DHEAD_SIZE - 1));
-}
-
-// return the allocated bit from header or footer at address 
-size_t GET_ALLOC(char *addr) 
-{
-    return (GET(addr) & 0x1);
-}
-
-char *GET_PREV_FREE(char *addr)
-{
-    return (char *)(GET(addr));
-}
-
-char *GET_NEXT_FREE(char *addr)
-{
-    return (char *)(GET(addr + HEAD_SIZE));
-}
-
-// return address to the header
-char *HEADER(char *addr) 
-{
-    return (char*)(addr) - HEAD_SIZE;
-}
-
-// return address to the footer
-char *FOOTER(char *addr) 
-{
-    return ((char *)(addr) + GET_SIZE(HEADER(addr)) - DHEAD_SIZE); 
-}
-
-// return the address of the next block
-char *NEXT_ADDR(char *addr) 
-{
-    return ((char *)(addr) + GET_SIZE(((char *)(addr) - HEAD_SIZE)));
-}
-
-// return the address of the previous block
-char *PREV_ADDR(char *addr)
-{
-    return ((char *)(addr) - GET_SIZE(((char *)(addr) - DHEAD_SIZE)));
-} 
-
+// Create a new free list entry and updates the list
 void NEW_FREELIST(char *addr)
 {
     // If this is the start of the free list, set the free list lo and hi pointers
@@ -143,34 +120,41 @@ void NEW_FREELIST(char *addr)
 
     PUT_FREELIST(addr, free_list_hi, free_list_lo);
 
+    // Update existing entries and free list hi index if free list exists
     if (free_list_lo != heap_start) {
 
-        //Update first and last entry of freelist
+        // There is only one entry in the free list that needs updated
         if (free_list_hi == free_list_lo) PUT_FREELIST(free_list_hi, addr, addr);
+        
+        // Previous and next entries of the free list need to point to the newly created entry
         else {
             PUT_FREELIST(free_list_hi, GET_PREV_FREE(free_list_hi), addr);
             PUT_FREELIST(free_list_lo, addr, GET_NEXT_FREE(free_list_lo));
         }
 
-        //Update free list hi index address
         free_list_hi = addr; 
     }
     return;
 }
 
+// Removes free list entry from the given address in heap and updates the free list
 void REMOVE_FREELIST(char *addr)
 {
     // The freelist is empty, this function shouldn't have been called
     if (free_list_lo == heap_start) mm_checkheap(__LINE__);
 
-    // There is only one element in the free list
+    // There is only one entry in the free list
     else if (free_list_lo == free_list_hi) {
+
+        // Set index back to heap start
         free_list_lo = heap_start;
         free_list_hi = free_list_lo;
     }
 
     // There are only two elements in the free list
     else if (addr == GET_PREV_FREE(GET_PREV_FREE(addr))) {
+
+        // Only one entry remains so make it point to itself and update index
         char *prev = GET_PREV_FREE(addr);
         PUT_FREELIST(prev, prev, prev);
         free_list_lo = prev;
@@ -179,8 +163,12 @@ void REMOVE_FREELIST(char *addr)
 
     // General case for more than two elements in the free list
     else {
+
+        // Make the previous point to the next and vice versa
         PUT_FREELIST(GET_PREV_FREE(addr), GET_PREV_FREE(GET_PREV_FREE(addr)), GET_NEXT_FREE(addr));
         PUT_FREELIST(GET_NEXT_FREE(addr), GET_PREV_FREE(addr), GET_NEXT_FREE(GET_NEXT_FREE(addr)));
+        
+        // Update the corresponding index if the removed entry was at an index
         if (addr == free_list_hi) free_list_hi = GET_PREV_FREE(addr);
         if (addr == free_list_lo) free_list_lo = GET_NEXT_FREE(addr); 
     }
@@ -196,45 +184,54 @@ static size_t align(size_t x)
 // First fit algorithm to find the first available space in the heap using the free list for the given size
 void *find_fit(size_t size)
 {
+    // No free blocks in heap, return early to save time
     if (free_list_lo == heap_start) return NULL;
 
     char *addr = free_list_lo;
 
+    // Loop through the free list and return the address of the first block that fits the given size
     do if (!GET_ALLOC(HEADER(addr)) && (size <= GET_SIZE(HEADER(addr)))) return addr;
     while ((addr = GET_NEXT_FREE(addr)) != free_list_lo);
 
     return NULL;
 }
 
-// Places a header and footer into the heap at a given address and deals with splitting if necessary, specifically used by malloc
+// Places a header and footer into the heap at a given address and split blocks if necessary
 void place(char *addr, size_t new_size)
 {
     size_t old_size = GET_SIZE(HEADER(addr));
 
+    // Remove free list entry
     REMOVE_FREELIST(addr);
 
-    //If splitting is necessary
+    // Splitting is necessary
     if ((old_size - new_size) >= (2*DHEAD_SIZE)) 
     {
+
+        // Place new allocated header and footer in heap
         PUT(HEADER(addr), PACK(new_size, 1));
         PUT(FOOTER(addr), PACK(new_size, 1));
 
         addr = NEXT_ADDR(addr);
 
+        // Place new free header and footer in heap
         PUT(HEADER(addr), PACK(old_size-new_size, 0));
         PUT(FOOTER(addr), PACK(old_size-new_size, 0));
 
+        // Create new free list entry
         NEW_FREELIST(addr);
     }
-    //If splitting is not necessary
+
+    // Splitting is not necessary
     else
     {
+        // Place new allocated header and footer in heap
         PUT(HEADER(addr), PACK(old_size, 1));
         PUT(FOOTER(addr), PACK(old_size, 1));
     }
 }
 
-//Coalesces free blocks at given address
+// Checks if coalescing is needed at every possible case and performs it if so
 char *coalesce(char *addr)
 {
     size_t prev = GET_ALLOC(FOOTER(PREV_ADDR(addr)));
@@ -245,48 +242,60 @@ char *coalesce(char *addr)
     if (prev && next) {
         return addr;
     }
+
     // CASE 2: Coalesce the next block
     else if (prev && !next) {
+
+        // Remove free list entry of next block
         REMOVE_FREELIST(NEXT_ADDR(addr));
 
+        // Rewrite header and footer with new size
         size += GET_SIZE(HEADER(NEXT_ADDR(addr)));
         PUT(HEADER(addr), PACK(size, 0));
         PUT(FOOTER(addr), PACK(size, 0));
         
     }
+
     // CASE 3: Coalesce the previous block
     else if (!prev && next) {
+
+        // Remove free list entry of next block
         REMOVE_FREELIST(PREV_ADDR(addr));
 
+        // Rewrite header and footer with new size
         size += GET_SIZE(HEADER(PREV_ADDR(addr)));
         PUT(FOOTER(addr), PACK(size, 0));
         PUT(HEADER(PREV_ADDR(addr)), PACK(size, 0));
 
+        // Update return address
         addr = PREV_ADDR(addr);
     }
  
     // CASE 4: Coalesce both blocks
     else { 
+
+        // Remove free list entry of previous and next block
         REMOVE_FREELIST(PREV_ADDR(addr));
         REMOVE_FREELIST(NEXT_ADDR(addr));
 
-        size += GET_SIZE(HEADER(PREV_ADDR(addr))) +
-        GET_SIZE(FOOTER(NEXT_ADDR(addr)));
+        // Rewrite header and footer with new size
+        size += GET_SIZE(HEADER(PREV_ADDR(addr))) + GET_SIZE(FOOTER(NEXT_ADDR(addr)));
         PUT(HEADER(PREV_ADDR(addr)), PACK(size, 0));
         PUT(FOOTER(NEXT_ADDR(addr)), PACK(size, 0));
 
+        // Update return address
         addr = PREV_ADDR(addr);
     }
 
     return addr;
 }
 
-// Extends the heap using mem_sbrk function of given size
+// Extends the heap of given size, checks for coalescing, and creates new free list entry
 char *extend_heap(size_t size)
 {
     char *addr;
 
-    // Allocate an even number of words to maintain alignment 
+    // Request space of given size
     if ((long)(addr = mem_sbrk(size)) == -1) return NULL;
 
     // Initialize free block header/footer and the buffer header 
@@ -294,7 +303,6 @@ char *extend_heap(size_t size)
     PUT(FOOTER(addr), PACK(size, 0)); 
     PUT(HEADER(NEXT_ADDR(addr)), PACK(0, 1)); 
 
-    // Coalesce previous buffer into extended heap
     char *new_addr = coalesce(addr);
 
     NEW_FREELIST(new_addr);
@@ -307,21 +315,23 @@ char *extend_heap(size_t size)
  */
 bool mm_init(void)
 {
-    /* Create the initial empty heap and make sure it is the same address as mem heap lo */
+
+    // Create the initial empty heap and make sure it is the same address as mem heap lo */
     if ((heap_start = (char *)mem_sbrk(4*HEAD_SIZE)) == (void *)-1) return false;
     if ((uint64_t)heap_start != (uint64_t)mem_heap_lo()) return false;
 
-    // Create padding/buffer, header, and footer into heap for intitialization
+    // Fill heap with padding/buffer, header, and footer
     PUT(heap_start, 0); 
     PUT(heap_start + (1*HEAD_SIZE), PACK(DHEAD_SIZE, 1)); 
     PUT(heap_start + (2*HEAD_SIZE), PACK(DHEAD_SIZE, 1)); 
     PUT(heap_start + (3*HEAD_SIZE), PACK(0, 1));
 
+    // Set starting values for heap start, free list lo, and free list hi variables
     heap_start += (2*HEAD_SIZE);
-
     free_list_lo = heap_start;
     free_list_hi = free_list_lo;
 
+    // Create starting room in heap
     if (extend_heap((1<<12)/HEAD_SIZE) == NULL) return false;
 
     return true;
@@ -332,18 +342,21 @@ bool mm_init(void)
  */
 void* malloc(size_t size)
 {
+
     size_t asize; 
     char *addr;
 
     if (size == 0) return NULL;
 
+    // Properly align given size
     asize = align(size)+DHEAD_SIZE;
 
     dbg_printf("\nMALLOC CALL OF SIZE %lx ALIGNED TO %lx", (uint64_t)size, (uint64_t)asize);
 
-    // If there is a fit in the heap, place a new header and footer there
+    // There is a fit in the heap
     if ((addr = find_fit(asize)) != NULL)
     {
+
         place(addr,asize);
 
         // Check if heap is still correct after placement and display placement address
@@ -352,13 +365,13 @@ void* malloc(size_t size)
 
         return addr;
     }
-    // Request more room in the heap and check to make sure it's granted
+
+    // There is no fit in the heap, need to request more space
     if ((addr = extend_heap(asize)) == NULL)
     {  
         return NULL;
     }
 
-    // Place header and footer at new address in the heap
     place(addr, asize);
 
     // Check if heap is still correct after placement and display placement address
@@ -377,17 +390,17 @@ void* malloc(size_t size)
  */
 void free(void* ptr)
 {
+
     dbg_printf("\nFREE CALL AT ADDRESS %lx\n", (uint64_t)ptr - (uint64_t)mem_heap_lo());
     size_t size = GET_SIZE(HEADER(ptr));
 
-    // Put a header and footer at the given address containing a pack of size and allocation boolean
+    // Put a header and footer at the given address
     PUT(HEADER(ptr), PACK(size, 0)); 
     PUT(FOOTER(ptr), PACK(size, 0));
 
-    // Run new free block address through coalesce function to check if coalecsing is necessary
+    // Check if coalecsing is necessary
     char *addr = coalesce(ptr);
 
-    // Put Free list block in heap
     NEW_FREELIST(addr);
 
     if (!mm_checkheap(__LINE__)) exit(0);
@@ -400,24 +413,28 @@ void free(void* ptr)
 void* realloc(void* oldptr, size_t size)
 {
 
-    // Check if given parameters are valid
+    // Free call
     if (size == 0)
     {
         free(oldptr);
         return NULL;
     }
+
+    // Malloc call
     else if (oldptr == NULL)
     {
         char *addr = malloc(size);
         return addr;
     }
 
+    // Realloc call
     else
     {
+
         size_t old_size = GET_SIZE(HEADER(oldptr));
         size_t new_size = align(size) +DHEAD_SIZE ;
 
-        // Perform malloc and free operation if given size is less than the existing one at given address
+        // Perform corresponging malloc and free calls
         if(old_size < new_size)
         {
             void *new_ptr = malloc(new_size);
@@ -425,6 +442,8 @@ void* realloc(void* oldptr, size_t size)
             free(oldptr);
             return new_ptr; 
         }
+
+        // Nothing needs to be changed
         else
         {   
             return oldptr;
@@ -445,12 +464,6 @@ void* calloc(size_t nmemb, size_t size)
         memset(ptr, 0, size);
     }
     return ptr;
-}
-
-
-static bool in_heap(const void* p)
-{
-    return p <= mem_heap_hi() && p >= mem_heap_lo();
 }
 
 /*
@@ -614,9 +627,6 @@ bool mm_checkheap(int lineno) {
         }
 
     #endif
-
-    print_heap();
-    print_freelist();
 
     return true;
 }
