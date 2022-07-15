@@ -10,6 +10,8 @@
  * The malloc function allocates a payload of requested size into the heap with proper alignment and splitting if needed
  * The free function deallocates space at a requested address in the heap, performing coalescing if needed
  * The realloc function reallocates space at a requested address in the heap performing either a free or malloc call depending on the size requested
+
+
  *
  */
 #include <assert.h>
@@ -110,7 +112,7 @@ void PUT_FREELIST(char *addr, char *prev, char *next)
 }
 
 // Create a new free list entry and updates the list
-void NEW_FREELIST(char *addr)
+void NEW_FREELIST_ENTRY(char *addr)
 {
     // If this is the start of the free list, set the free list lo and hi pointers
     if (free_list_lo == heap_start) {
@@ -219,7 +221,7 @@ void place(char *addr, size_t new_size)
         PUT(FOOTER(addr), PACK(old_size-new_size, 0));
 
         // Create new free list entry
-        NEW_FREELIST(addr);
+        NEW_FREELIST_ENTRY(addr);
     }
 
     // Splitting is not necessary
@@ -305,7 +307,7 @@ char *extend_heap(size_t size)
 
     char *new_addr = coalesce(addr);
 
-    NEW_FREELIST(new_addr);
+    NEW_FREELIST_ENTRY(new_addr);
 
     return new_addr;
  }
@@ -401,7 +403,7 @@ void free(void* ptr)
     // Check if coalecsing is necessary
     char *addr = coalesce(ptr);
 
-    NEW_FREELIST(addr);
+    NEW_FREELIST_ENTRY(addr);
 
     if (!mm_checkheap(__LINE__)) exit(0);
     return;
@@ -591,13 +593,6 @@ bool mm_checkheap(int lineno) {
             else if ((GET_ALLOC(HEADER(PREV_ADDR(addr))) == 0 && GET_SIZE(HEADER(PREV_ADDR(addr))) > 0) || (GET_ALLOC(HEADER(NEXT_ADDR(addr))) == 0 && GET_SIZE(HEADER(NEXT_ADDR(addr))) > 0))  {
                 dbg_printf("\nERROR AT LINE %d: ", lineno);
                 dbg_printf("Coalescing failed at address %lx\n", (uint64_t)addr - (uint64_t)mem_heap_lo());
-                print_heap();
-                print_freelist();
-                return false;
-            }
-            else if (false)  {
-                dbg_printf("\nERROR AT LINE %d: ", lineno);
-                dbg_printf("ERROR MESSAGE HERE!\n");
                 print_heap();
                 print_freelist();
                 return false;
